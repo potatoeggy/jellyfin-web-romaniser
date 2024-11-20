@@ -1,6 +1,8 @@
 import escapeHtml from 'escape-html';
 import pinyin from 'pinyin';
 import * as wanakana from 'wanakana';
+import * as cantonese from 'cantonese-romanisation';
+import * as TradOrSimp from 'traditional-or-simplified-modified';
 
 import autoFocuser from 'components/autoFocuser';
 import { appRouter } from '../components/router/appRouter';
@@ -26,6 +28,7 @@ let isDynamicLyric = false;
 let autoScroll = AutoScroll.Instant;
 
 const chineseRegex = /\p{Script=Han}/u;
+const nonChineseRegex = /^[^\p{Script=Han}]*$/u;
 
 function isStringChinese(text) {
     return chineseRegex.test(text);
@@ -52,28 +55,31 @@ function getLyricHtml(content) {
     const newContent = [];
 
     if (contentType === 'chinese') {
-        console.log('got chinese');
-        const cleaned = pinyin(content, {
-            style: 'tone',
-            heteronym: true,
-            segment: true
-        });
+        const isTraditional = TradOrSimp.isTraditional(content.replace(nonChineseRegex, ''));
+
+        const cleaned = isTraditional ?
+            cantonese.getYale(content) : pinyin(content, {
+                style: 'tone',
+                heteronym: true,
+                segment: true
+            });
 
         let originalIndex = 0;
-        for (const [cleanedItem] of cleaned) {
+        for (let [cleanedItem] of cleaned) {
+            cleanedItem ??= ' ';
+            const cleanedCleaned = isTraditional ? cleanedItem.substring(0, cleanedItem.length - 1) : cleanedItem;
             const originalItem = content[originalIndex];
 
-            if (isStringChinese(originalItem)) {
-                newContent.push(`${originalItem} <rt>${cleanedItem}</rt>`);
+            if (isStringChinese(originalItem) || isTraditional) { // traditional creates one array per char
+                newContent.push(`${originalItem} <rt>${cleanedCleaned}</rt>`);
                 originalIndex++;
             } else {
                 const original = content.substring(originalIndex, originalIndex + cleanedItem.length);
                 newContent.push(`${original.trim() || '&nbsp;'} <rt></rt>`);
-                originalIndex += cleanedItem.length;
+                originalIndex += cleanedCleaned.length;
             }
         }
     } else if (contentType === 'japanese') {
-        console.log('got japanese');
         const cleaned = wanakana.tokenize(content).map(token => wanakana.toRomaji(token));
 
         let originalIndex = 0;
@@ -89,8 +95,6 @@ function getLyricHtml(content) {
                 originalIndex += cleanedItem.length;
             }
         }
-    } else {
-        console.log('got english');
     }
 
     return newContent.length ? `<ruby>${newContent.join('\n')}</ruby>` : content;
