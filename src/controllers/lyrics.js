@@ -25,7 +25,7 @@ let savedLyrics;
 let isDynamicLyric = false;
 let autoScroll = AutoScroll.Instant;
 
-const chineseRegex = /[\u4E00-\u9FFF\u3400-\u4DBF\u20000-\u2A6DF\u2A700-\u2B73F\u2B740-\u2B81F\u2B820-\u2CEAF\uF900-\uFAFF]/;
+const chineseRegex = /\p{Script=Han}/u;
 
 function isStringChinese(text) {
     return chineseRegex.test(text);
@@ -36,9 +36,11 @@ function isStringJapanese(text) {
 }
 
 function getContentType(line) {
-    if (isStringJapanese(line)) {
-        return 'japanese';
-    } else if (line.some(isStringChinese)) {
+    // if ([...line].some(s => isStringJapanese(s) && !isStringChinese(s))) {
+    //     return 'japanese';
+    // }
+
+    if ([...line].some(isStringChinese)) {
         return 'chinese';
     }
     return 'english';
@@ -50,6 +52,7 @@ function getLyricHtml(content) {
     const newContent = [];
 
     if (contentType === 'chinese') {
+        console.log('got chinese');
         const cleaned = pinyin(content, {
             style: 'tone',
             heteronym: true,
@@ -61,28 +64,33 @@ function getLyricHtml(content) {
             const originalItem = content[originalIndex];
 
             if (isStringChinese(originalItem)) {
-                originalIndex++;
                 newContent.push(`${originalItem} <rt>${cleanedItem}</rt>`);
+                originalIndex++;
             } else {
+                const original = content.substring(originalIndex, originalIndex + cleanedItem.length);
+                newContent.push(`${original.trim() || '&nbsp;'} <rt></rt>`);
                 originalIndex += cleanedItem.length;
-                newContent.push(`${originalItem} <rt></rt>`);
             }
         }
     } else if (contentType === 'japanese') {
-        const cleaned = wanakana.tokenize(content);
+        console.log('got japanese');
+        const cleaned = wanakana.tokenize(content).map(token => wanakana.toRomaji(token));
 
         let originalIndex = 0;
-        for (const [cleanedItem] of cleaned) {
+        for (const cleanedItem of cleaned) {
             const originalItem = content[originalIndex];
 
             if (isStringJapanese(originalItem)) {
-                originalIndex++;
                 newContent.push(`${originalItem} <rt>${cleanedItem}</rt>`);
+                originalIndex++;
             } else {
+                const original = content.substring(originalIndex, originalIndex + cleanedItem.length);
+                newContent.push(`${original.trim() || '&nbsp;'} <rt></rt>`);
                 originalIndex += cleanedItem.length;
-                newContent.push(`${originalItem} <rt></rt>`);
             }
         }
+    } else {
+        console.log('got english');
     }
 
     return newContent.length ? `<ruby>${newContent.join('\n')}</ruby>` : content;
