@@ -1,4 +1,6 @@
 import escapeHtml from 'escape-html';
+import pinyin from 'pinyin';
+import * as wanakana from 'wanakana';
 
 import autoFocuser from 'components/autoFocuser';
 import { appRouter } from '../components/router/appRouter';
@@ -23,20 +25,97 @@ let savedLyrics;
 let isDynamicLyric = false;
 let autoScroll = AutoScroll.Instant;
 
+const chineseRegex = /[\u4E00-\u9FFF\u3400-\u4DBF\u20000-\u2A6DF\u2A700-\u2B73F\u2B740-\u2B81F\u2B820-\u2CEAF\uF900-\uFAFF]/;
+
+function isStringChinese(text) {
+    return chineseRegex.test(text);
+}
+
+function isStringJapanese(text) {
+    return wanakana.isJapanese(text);
+}
+
+function getContentType(line) {
+    if (isStringJapanese(line)) {
+        return 'japanese';
+    } else if (line.some(isStringChinese)) {
+        return 'chinese';
+    }
+    return 'english';
+}
+
+function getLyricHtml(content) {
+    const contentType = getContentType(content);
+
+    const newContent = [];
+
+    if (contentType === 'chinese') {
+        const cleaned = pinyin(content, {
+            style: 'tone',
+            heteronym: true,
+            segment: true
+        });
+
+        let originalIndex = 0;
+        for (const [cleanedItem] of cleaned) {
+            const originalItem = content[originalIndex];
+
+            if (isStringChinese(originalItem)) {
+                originalIndex++;
+                newContent.push(`${originalItem} <rt>${cleanedItem}</rt>`);
+            } else {
+                originalIndex += cleanedItem.length;
+                newContent.push(`${originalItem} <rt></rt>`);
+            }
+        }
+    } else if (contentType === 'japanese') {
+        const cleaned = wanakana.tokenize(content);
+
+        let originalIndex = 0;
+        for (const [cleanedItem] of cleaned) {
+            const originalItem = content[originalIndex];
+
+            if (isStringJapanese(originalItem)) {
+                originalIndex++;
+                newContent.push(`${originalItem} <rt>${cleanedItem}</rt>`);
+            } else {
+                originalIndex += cleanedItem.length;
+                newContent.push(`${originalItem} <rt></rt>`);
+            }
+        }
+    }
+
+    return newContent.length ? `<ruby>${newContent.join('\n')}</ruby>` : content;
+}
+
 function dynamicLyricHtmlReducer(htmlAccumulator, lyric, index) {
+    const content = escapeHtml(lyric.Text);
+
     if (layoutManager.tv) {
-        htmlAccumulator += `<button class="lyricsLine dynamicLyric listItem show-focus" id="lyricPosition${index}" data-lyrictime="${lyric.Start}">${escapeHtml(lyric.Text)}</button>`;
+        htmlAccumulator += `
+        <button class="lyricsLine dynamicLyric listItem show-focus" id="lyricPosition${index}" data-lyrictime="${lyric.Start}">
+            ${getLyricHtml(content)}
+        </button>`;
     } else {
-        htmlAccumulator += `<div class="lyricsLine dynamicLyric" id="lyricPosition${index}" data-lyrictime="${lyric.Start}">${escapeHtml(lyric.Text)}</div>`;
+        htmlAccumulator += `
+        <div class="lyricsLine dynamicLyric" id="lyricPosition${index}" data-lyrictime="${lyric.Start}">
+            ${getLyricHtml(content)}
+        </div>`;
     }
     return htmlAccumulator;
 }
 
 function staticLyricHtmlReducer(htmlAccumulator, lyric, index) {
     if (layoutManager.tv) {
-        htmlAccumulator += `<button class="lyricsLine listItem show-focus" id="lyricPosition${index}">${escapeHtml(lyric.Text)}</button>`;
+        htmlAccumulator += `
+        <button class="lyricsLine listItem show-focus" id="lyricPosition${index}">
+            ${getLyricHtml(escapeHtml(lyric.Text))}
+        </button>`;
     } else {
-        htmlAccumulator += `<div class="lyricsLine" id="lyricPosition${index}">${escapeHtml(lyric.Text)}</div>`;
+        htmlAccumulator += `
+        <div class="lyricsLine" id="lyricPosition${index}">
+            ${getLyricHtml(escapeHtml(lyric.Text))}
+        </div>`;
     }
     return htmlAccumulator;
 }
