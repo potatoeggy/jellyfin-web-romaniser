@@ -1,8 +1,12 @@
 import escapeHtml from 'escape-html';
 import pinyin from 'pinyin';
-import * as wanakana from 'wanakana';
+// import * as wanakana from 'wanakana';
 import * as cantonese from 'cantonese-romanisation';
 import * as TradOrSimp from 'traditional-or-simplified-modified';
+import { romanize } from 'koroman';
+import kuroshiro from 'kuroshiro';
+// Initialize kuroshiro with an instance of analyzer (You could check the [apidoc](#initanalyzer) for more information):
+// For this example, you should npm install and import the kuromoji analyzer first
 
 import autoFocuser from 'components/autoFocuser';
 import { appRouter } from '../components/router/appRouter';
@@ -30,12 +34,31 @@ let autoScroll = AutoScroll.Instant;
 const chineseRegex = /\p{Script=Han}/u;
 const nonChineseRegex = /^[^\p{Script=Han}]*$/u;
 
+kuroshiro.init(() => {
+    console.log('Kuroshiro initialized');
+});
+
 function isStringChinese(text) {
     return chineseRegex.test(text);
 }
 
 function isStringJapanese(text) {
-    return wanakana.isJapanese(text);
+    // if there is at least one -gana character (kanji can be canto or mando)
+    try {
+        return kuroshiro.hasHiragana(text) || kuroshiro.hasKatakana(text);
+    } catch (e) {
+        console.error('Error in isStringJapanese:', e);
+        return false;
+    }
+}
+
+/***
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isStringKorean(text) {
+    const match = text.match(/[\u3131-\uD79D]/g);
+    return match?.length > 0;
 }
 
 function getContentType(line) {
@@ -43,14 +66,24 @@ function getContentType(line) {
     //     return 'japanese';
     // }
 
+    if (isStringJapanese(line)) {
+        return 'japanese';
+    }
+
     if ([...line].some(isStringChinese)) {
         return 'chinese';
     }
+
+    if ([...line].some(isStringKorean)) {
+        return 'korean';
+    }
+
     return 'english';
 }
 
 function getLyricHtml(content) {
     const contentType = getContentType(content);
+    console.log('content type:', contentType);
 
     const newContent = [];
 
@@ -80,22 +113,47 @@ function getLyricHtml(content) {
             }
         }
     } else if (contentType === 'japanese') {
-        const cleaned = wanakana.tokenize(content).map(token => wanakana.toRomaji(token));
+        //const cleaned = wanakana.tokenize(content).map(token => wanakana.toRomaji(token));
+        try {
+            const cleaned = kuroshiro.convert(content, { to: 'romaji', mode: 'spaced' }).split();
+            console.log('converted:', cleaned);
+            const contentArray = content.split();
 
+            let originalIndex = 0;
+            for (const cleanedItem of cleaned) {
+                const originalItem = contentArray[originalIndex];
+
+                if (isStringJapanese(originalItem)) {
+                    newContent.push(`${originalItem} <rt>${cleanedItem}</rt>`);
+                    originalIndex++;
+                } else {
+                    newContent.push(`${originalItem.trim() || '&nbsp;'} <rt></rt>`);
+                    originalIndex++;
+                }
+            }
+        } catch (e) {
+            // console.error('Error in Japanese conversion:', e);
+            return content;
+        }
+    } else if (contentType === 'korean') {
+        const romanised = romanize(content);
+
+        const contentArray = content.split();
         let originalIndex = 0;
-        for (const cleanedItem of cleaned) {
-            const originalItem = content[originalIndex];
+        for (const cleanedItem of romanised.split()) {
+            const originalItem = contentArray[originalIndex];
 
-            if (isStringJapanese(originalItem)) {
+            if (isStringKorean(originalItem)) {
                 newContent.push(`${originalItem} <rt>${cleanedItem}</rt>`);
                 originalIndex++;
             } else {
-                const original = content.substring(originalIndex, originalIndex + cleanedItem.length);
-                newContent.push(`${original.trim() || '&nbsp;'} <rt></rt>`);
-                originalIndex += cleanedItem.length;
+                newContent.push(`${originalItem.trim() || '&nbsp;'} <rt></rt>`);
+                originalIndex++;
             }
         }
     }
+
+    console.log(newContent);
 
     return newContent.length ? `<ruby>${newContent.join('\n')}</ruby>` : content;
 }

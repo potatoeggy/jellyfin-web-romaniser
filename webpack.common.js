@@ -49,6 +49,9 @@ const config = {
             '@mui/styled-engine': '@mui/styled-engine/legacy',
             '@mui/system': '@mui/system/legacy',
             '@mui/utils': '@mui/utils/legacy'
+        },
+        fallback: {
+            'path': require.resolve('path-browserify')
         }
     },
     plugins: [
